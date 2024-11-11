@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include <component.h>
 #include <pins.h>
+#include <nvboard.h>
 
 extern std::vector<Component *> components;
 void uart_rx_getchar(uint8_t ch);
@@ -8,59 +9,132 @@ void uart_term_focus(bool v);
 void kb_push_key(uint8_t scancode, bool is_keydown);
 static bool uart_term_get_focus = false;
 
-static void mousedown_handler(const SDL_Event &ev) {
+static void mousedown_handler(const SDL_Event &ev)
+{
   int x_pos = ev.button.x;
   int y_pos = ev.button.y;
   bool click_uart_term = false;
-  for (auto i : components) {
-    if (i->in_rect(x_pos, y_pos)) {
-      switch (i->get_component_type()) {
-        case BUTTON_TYPE: pin_poke(i->get_pin(), 1); break;
-        case SWITCH_TYPE: pin_poke(i->get_pin(), i->get_state() ^ 1); break;
-        case UART_TYPE: click_uart_term = true; break;
+  for (auto i : components)
+  {
+    if (i->in_rect(x_pos, y_pos))
+    {
+      switch (i->get_component_type())
+      {
+      case BUTTON_TYPE:
+        pin_poke(i->get_pin(), 1);
+        break;
+      case SWITCH_TYPE:
+        pin_poke(i->get_pin(), i->get_state() ^ 1);
+        break;
+      case UART_TYPE:
+        click_uart_term = true;
+        break;
       }
     }
   }
-  if (uart_term_get_focus ^ click_uart_term) {
-    if (click_uart_term) SDL_StartTextInput();
-    else SDL_StopTextInput();
+  if (uart_term_get_focus ^ click_uart_term)
+  {
+    if (click_uart_term)
+      SDL_StartTextInput();
+    else
+      SDL_StopTextInput();
     uart_term_get_focus = click_uart_term;
     uart_term_focus(uart_term_get_focus);
   }
 }
 
-static void mouseup_handler(const SDL_Event &ev) {
+static void mouseup_handler(const SDL_Event &ev)
+{
   int x_pos = ev.button.x;
   int y_pos = ev.button.y;
-  for (auto i : components) {
-    if (i->in_rect(x_pos, y_pos)) {
-      switch (i->get_component_type()) {
-        case BUTTON_TYPE: pin_poke(i->get_pin(), 0); break;
+  for (auto i : components)
+  {
+    if (i->in_rect(x_pos, y_pos))
+    {
+      switch (i->get_component_type())
+      {
+      case BUTTON_TYPE:
+        pin_poke(i->get_pin(), 0);
+        break;
       }
     }
   }
 }
 
-void read_event() {
+void read_event()
+{
   SDL_Event ev;
   SDL_PollEvent(&ev);
-  switch (ev.type) {
-    case SDL_QUIT: exit(0);
-    case SDL_WINDOWEVENT:
-      if (ev.window.event == SDL_WINDOWEVENT_CLOSE) { exit(0); }
-      break;
-    case SDL_MOUSEBUTTONDOWN: mousedown_handler(ev); break;
-    case SDL_MOUSEBUTTONUP: mouseup_handler(ev); break;
-    case SDL_KEYDOWN:
-      if (uart_term_get_focus) {
-        switch (ev.key.keysym.sym) {
-          case SDLK_RETURN: uart_rx_getchar('\n'); break;
-          case SDLK_BACKSPACE: uart_rx_getchar('\b'); break;
-        }
+  switch (ev.type)
+  {
+  case SDL_QUIT:
+    exit(0);
+
+  case SDL_WINDOWEVENT:
+    if (ev.window.event == SDL_WINDOWEVENT_CLOSE)
+    {
+      exit(0);
+    }
+    break;
+
+  case SDL_MOUSEBUTTONDOWN:
+  {
+    // 缩放鼠标点击位置
+    int scaled_x = (int)(ev.button.x / SCALE);
+    int scaled_y = (int)(ev.button.y / SCALE);
+
+    // 构造缩放后的事件
+    SDL_Event scaled_ev = ev;
+    scaled_ev.button.x = scaled_x;
+    scaled_ev.button.y = scaled_y;
+
+    // 处理缩放后的事件
+    mousedown_handler(scaled_ev);
+    break;
+  }
+
+  case SDL_MOUSEBUTTONUP:
+  {
+    // 缩放鼠标点击位置
+    int scaled_x = (int)(ev.button.x / SCALE);
+    int scaled_y = (int)(ev.button.y / SCALE);
+
+    // 构造缩放后的事件
+    SDL_Event scaled_ev = ev;
+    scaled_ev.button.x = scaled_x;
+    scaled_ev.button.y = scaled_y;
+
+    // 处理缩放后的事件
+    mouseup_handler(scaled_ev);
+    break;
+  }
+
+  case SDL_KEYDOWN:
+    if (uart_term_get_focus)
+    {
+      switch (ev.key.keysym.sym)
+      {
+      case SDLK_RETURN:
+        uart_rx_getchar('\n');
+        break;
+      case SDLK_BACKSPACE:
+        uart_rx_getchar('\b');
+        break;
       }
-    case SDL_KEYUP:
-      if (!uart_term_get_focus) kb_push_key(ev.key.keysym.scancode, ev.key.type == SDL_KEYDOWN);
-      break;
-    case SDL_TEXTINPUT: if (uart_term_get_focus) uart_rx_getchar(ev.text.text[0]); break;
+    }
+    // **注意：这里缺少 break，可能是故意让 KEYUP 代码继续执行**
+  case SDL_KEYUP:
+    if (!uart_term_get_focus)
+    {
+      kb_push_key(ev.key.keysym.scancode, ev.key.type == SDL_KEYDOWN);
+    }
+    break;
+
+  case SDL_TEXTINPUT:
+    if (uart_term_get_focus)
+    {
+      uart_rx_getchar(ev.text.text[0]);
+    }
+    break;
   }
 }
